@@ -166,13 +166,9 @@ class LayoutAnalyzer:
         return elements
 
     def _render_page_with_boxes(self, page_info, page_result: Dict, output_dir: str):
-        """渲染页面并绘制检测框和阅读顺序"""
-        try:
-            import fitz
-            doc = fitz.open(page_info.pdf_path if hasattr(page_info, 'pdf_path') else "")
-            # 简单起见，跳过渲染（完整实现需要传入 pdf_path）
-        except:
-            pass
+        """渲染页面并绘制检测框和阅读顺序（可选项）"""
+        # 渲染功能需要 pdf_path，后续扩展
+        pass
 
 
 def analyze_batch(pdf_dir: str, output_dir: str, model_path: str = None, max_workers: int = 4):

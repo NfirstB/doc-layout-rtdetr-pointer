@@ -45,21 +45,27 @@ python scripts/label_converter.py \
     --to-yolo
 ```
 
-### 3. 训练模型
+### 3. 训练模型（>5分钟必须用 tmux）
 
 ```bash
-# 启动 tmux 训练（>5分钟必须用 tmux）
+# 在 tmux 里启动训练（立即返回，不阻塞）
 python scripts/run_tmux.py train \
     --data ./data/yolo_dataset/ \
     --epochs 100 \
     --batch 16 \
-    --size m
+    --size m \
+    --name layout_train
 
-# 查看进度
+# 查看训练进度
 tmux attach -t layout_train
+# 或看日志
+tail -f /tmp/tmux_layout_train.log
 
-# 后台运行
-python scripts/run_tmux.py train --detach --epochs 100
+# 查看所有 tmux session
+python scripts/run_tmux.py status
+
+# 关闭 session
+tmux kill-session -t layout_train
 ```
 
 ### 4. 批量推理
