@@ -1,0 +1,7 @@
+# Auto-generated
+path: /home/node/.openclaw/workspace/doc-layout-analyzer/data/yolo_dataset
+train: images/train
+val: images/val
+
+nc: 8
+names: ['title', 'header', 'body', 'figure', 'caption', 'table', 'footnote', 'equation']
