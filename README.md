@@ -78,7 +78,86 @@ python scripts/download_publaynet.py \
 ## 依赖
 
 ```bash
-pip install ultralytics torch pdfplumber pyyaml pillow
+pip install ultralytics torch pdfplumber pyyaml pillow pypdfium2 httpx
+```
+
+## 自动标注流水线（Auto Label Pipeline）
+
+用 **专家模型 + 大模型** 实现低成本高精度自动标注，替代纯人工标注。
+
+### 架构
+
+```
+PDF 页面
+    ↓
+Step 1: 专家模型（YOLO 检测）
+    生成伪标签：bbox + class + conf
+    ↓
+Step 2: VLM 精修（MiniMax VL）
+    图像 + 伪标签 → Prompt → 大模型修正错误
+    ↓
+Step 3: 幻觉过滤
+    规则过滤：几何约束 + 类别规则 + 重叠检测
+    ↓
+高质量标注结果
+```
+
+### 使用方法
+
+```python
+from auto_label import AutoLabelPipeline
+
+pipeline = AutoLabelPipeline()
+
+# 单页
+result = pipeline.run("/path/to/paper.pdf", page_num=0, dpi=150)
+
+print(result["kept"])        # 最终标注元素
+print(result["stats"])        # 统计信息
+result["page_image"].save("annotated.jpg")  # 可视化
+
+# 批量
+results = pipeline.run_batch([
+    "/path/to/paper1.pdf",
+    "/path/to/paper2.pdf",
+], pages_per_pdf=[0, 1], output_dir="./outputs")
+```
+
+### CLI 用法
+
+```bash
+# 完整流水线
+python -m auto_label.pipeline /path/to/paper.pdf --page 0 --dpi 150 -o ./outputs
+
+# 跳过 VLM（仅专家模型 + 过滤）
+python -m auto_label.pipeline /path/to/paper.pdf --skip-vlm
+
+# 跳过过滤（仅专家模型 + VLM）
+python -m auto_label.pipeline /path/to/paper.pdf --skip-filter
+```
+
+### 子模块说明
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 主管道 | `auto_label/pipeline.py` | 调度 Step 1→2→3 |
+| 专家检测 | `auto_label/expert_layout.py` | YOLO 检测生成伪标签 |
+| VLM 精修 | `auto_label/vlm_refine.py` | MiniMax VL API 修正伪标签 |
+| 幻觉过滤 | `auto_label/filter_hallucination.py` | 规则过滤假阳性 |
+| Prompt 模板 | `auto_label/prompt_templates.py` | VLM Prompt 工程 |
+
+### API Key 配置
+
+VLM 精修步骤需要 MiniMax API Key（在 `vlm_refine.py` 中配置）:
+
+```python
+MINIMAX_API_KEY = "your_key_here"
+```
+
+### 依赖
+
+```bash
+pip install ultralytics pypdfium2 httpx pillow
 ```
 
 ## 数据集格式
