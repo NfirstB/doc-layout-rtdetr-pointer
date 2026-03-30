@@ -117,6 +117,16 @@ names: ['title', 'header', 'body', 'figure', 'caption', 'table', 'footnote', 'eq
 - Buffer of Thoughts: arXiv:2406.04271
 - ReasonFlux: arXiv:2502.06772
 
+## 更新日志
+
+### v1.1 (2026-03-30)
+- **修复可视化黑图 bug**: `visualize()` 函数使用 `alpha_composite` 合并 RGBA 层后再转 RGB，解决了透明区域像素变黑的问题
+- **框外标签**: 类别标签从框内移至框外下方，避免遮挡 PDF 文字
+- **透明边框**: 检测框改为全透明填充 + 细边框，完整保留 PDF 可读性
+
+### v1.0 (2026-03-25)
+- 初始版本：RT-DETR/YOLO 检测 + Pointer Network 阅读顺序
+
 ## License
 
 MIT
