@@ -103,23 +103,25 @@ def predict_order(pointer_model, bboxes, categories):
 def visualize(img_pil, bboxes, categories, confidences, order,
               output_path="output.jpg"):
     """
-    可视化检测结果和阅读顺序
+    可视化检测结果和阅读顺序（透明框，不挡文字）
     """
-    img = img_pil.copy()
-    W, H = img.size
-    draw = ImageDraw.Draw(img)
+    W, H = img_pil.size
+
+    # 直接在 RGBA 模式的图片上绘制（避免 alpha_composite 色彩问题）
+    img = img_pil.convert("RGBA")
+    draw = ImageDraw.Draw(img, "RGBA")
 
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
+        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
     except:
-        font = ImageFont.load_default()
-        font_small = ImageFont.load_default()
+        font = ImageDraw.font.load_default()
+        font_bold = font
 
     # 建立 idx → order position 映射
     order_pos = {elem_idx: pos for pos, elem_idx in enumerate(order)}
 
-    # 画检测框
+    # 画检测框（半透明填充 + 实线边框）
     for i, (bbox, cat_id, conf) in enumerate(zip(bboxes, categories, confidences)):
         x0, y0, x1, y1 = bbox
         px0, py0, px1, py1 = x0 * W, y0 * H, x1 * W, y1 * H
@@ -127,17 +129,20 @@ def visualize(img_pil, bboxes, categories, confidences, order,
         cls_name = CLASS_NAMES[cat_id] if cat_id < len(CLASS_NAMES) else "unknown"
         color = CLASS_COLORS.get(cls_name, (255, 255, 0))
 
-        # 半透明填充
-        fill = tuple(max(0, c - 80) for c in color)
-        draw.rectangle([px0, py0, px1, py1], fill=fill, outline=color, width=2)
+        # 半透明填充 + 边框（不挡文字）
+        draw.rectangle([px0, py0, px1, py1],
+                       fill=color + (50,),    # 半透明
+                       outline=color + (220,), # 带 alpha
+                       width=2)
 
-        # 标签
+        # 标签放在框外下方（不遮挡内容）
         label = f"{cls_name} {conf:.2f}"
-        lw, lh = draw.textbbox((0, 0), label, font=font_small)[2:]
-        draw.rectangle([px0, max(0, py1 - lh - 4), px0 + lw + 6, py1], fill=color)
-        draw.text((px0 + 3, py1 - lh - 2), label, fill=(0, 0, 0), font=font_small)
+        lw, lh = draw.textbbox((0, 0), label, font=font)[2:]
+        draw.rectangle([px0, py1 + 2, px0 + lw + 8, py1 + lh + 8],
+                       fill=color + (180,), outline=color + (255,), width=1)
+        draw.text((px0 + 4, py1 + 4), label, fill=(0, 0, 0, 255), font=font)
 
-    # 画阅读顺序（黄点 + 数字）
+    # 画阅读顺序（黄点 + 数字，放在框内中心）
     for elem_idx in order:
         bbox = bboxes[elem_idx]
         x0, y0, x1, y1 = bbox
@@ -145,36 +150,39 @@ def visualize(img_pil, bboxes, categories, confidences, order,
         cy = (y0 + y1) / 2 * H
         pos = order_pos[elem_idx]
 
-        r = 14
+        r = 16
         draw.ellipse([cx - r, cy - r, cx + r, cy + r],
-                     fill=(255, 210, 0), outline=(0, 0, 0), width=2)
-        draw.text((cx - 5, cy - 7), str(pos + 1),
-                 fill=(0, 0, 0), font=font)
+                     fill=(255, 210, 0, 230), outline=(0, 0, 0, 255), width=2)
+        num_str = str(pos + 1)
+        tw, th = draw.textbbox((0, 0), num_str, font=font_bold)[2:]
+        draw.text((cx - tw / 2, cy - th / 2 - 1), num_str,
+                  fill=(0, 0, 0, 255), font=font_bold)
 
-    # 图例
+    # 图例（放在图片右下角）
     legend_items = list(CLASS_COLORS.items())
-    max_len = max(draw.textbbox((0, 0), k, font=font_small)[2] for k, _ in legend_items)
-    lx = W - max_len - 60
-    ly = 10
+    max_len = max(draw.textbbox((0, 0), k, font=font)[2] for k, _ in legend_items)
+    lx = W - max_len - 68
+    ly = 40
     pad = 5
 
-    draw.rectangle([lx - pad, ly - pad, W - 5, ly + len(legend_items) * 22 + pad],
-                   fill=(255, 255, 255, 230))
+    draw.rectangle([lx - pad, ly - pad, W - 8, ly + len(legend_items) * 20 + pad + 2],
+                   fill=(255, 255, 255, 245), outline=(0, 0, 0, 80), width=1)
     for i, (cls_name, color) in enumerate(legend_items):
-        draw.rectangle([lx, ly + i * 22, lx + 14, ly + i * 22 + 14],
-                       fill=color, outline=(0, 0, 0))
-        draw.text((lx + 20, ly + i * 22 + 1), cls_name,
-                 fill=(0, 0, 0), font=font_small)
+        draw.rectangle([lx, ly + i * 20, lx + 13, ly + i * 20 + 13],
+                       fill=color + (200,), outline=(0, 0, 0, 100), width=1)
+        draw.text((lx + 19, ly + i * 20 + 1), cls_name,
+                  fill=(0, 0, 0, 255), font=font)
 
-    # 标题
-    draw.rectangle([0, 0, W, 32], fill=(0, 0, 0))
+    # 标题栏（黑色背景条）
+    draw.rectangle([0, 0, W, 32], fill=(20, 20, 20, 255))
     num_elems = len(bboxes)
     num_classes = len(set(categories))
-    draw.text((8, 7),
-              f"{num_elems} elements, {num_classes} types, {len(order)} in reading order",
-              fill=(255, 255, 255), font=font)
+    draw.text((10, 8),
+              f"{num_elems} elements  |  {num_classes} types  |  {len(order)} in reading order",
+              fill=(255, 255, 255, 255), font=font)
 
-    img.save(output_path, "JPEG", quality=90)
+    # 转回 RGB 保存
+    img.convert("RGB").save(output_path, "JPEG", quality=90)
     return output_path
 
 
