@@ -107,9 +107,10 @@ def visualize(img_pil, bboxes, categories, confidences, order,
     """
     W, H = img_pil.size
 
-    # 直接在 RGBA 模式的图片上绘制（避免 alpha_composite 色彩问题）
-    img = img_pil.convert("RGBA")
-    draw = ImageDraw.Draw(img, "RGBA")
+    # 基础图 + 透明叠加层（分开绘制）
+    img_rgba = img_pil.convert("RGBA")
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay, "RGBA")
 
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
@@ -121,7 +122,7 @@ def visualize(img_pil, bboxes, categories, confidences, order,
     # 建立 idx → order position 映射
     order_pos = {elem_idx: pos for pos, elem_idx in enumerate(order)}
 
-    # 画检测框（半透明填充 + 实线边框）
+    # 画检测框（透明填充 + 边框，不挡文字）
     for i, (bbox, cat_id, conf) in enumerate(zip(bboxes, categories, confidences)):
         x0, y0, x1, y1 = bbox
         px0, py0, px1, py1 = x0 * W, y0 * H, x1 * W, y1 * H
@@ -129,20 +130,20 @@ def visualize(img_pil, bboxes, categories, confidences, order,
         cls_name = CLASS_NAMES[cat_id] if cat_id < len(CLASS_NAMES) else "unknown"
         color = CLASS_COLORS.get(cls_name, (255, 255, 0))
 
-        # 半透明填充 + 边框（不挡文字）
+        # 全透明填充 + 边框
         draw.rectangle([px0, py0, px1, py1],
-                       fill=color + (50,),    # 半透明
-                       outline=color + (220,), # 带 alpha
+                       fill=(0, 0, 0, 0),
+                       outline=color + (180,),
                        width=2)
 
-        # 标签放在框外下方（不遮挡内容）
+        # 标签放在框外下方
         label = f"{cls_name} {conf:.2f}"
         lw, lh = draw.textbbox((0, 0), label, font=font)[2:]
         draw.rectangle([px0, py1 + 2, px0 + lw + 8, py1 + lh + 8],
                        fill=color + (180,), outline=color + (255,), width=1)
         draw.text((px0 + 4, py1 + 4), label, fill=(0, 0, 0, 255), font=font)
 
-    # 画阅读顺序（黄点 + 数字，放在框内中心）
+    # 画阅读顺序（黄点 + 数字，框内中心）
     for elem_idx in order:
         bbox = bboxes[elem_idx]
         x0, y0, x1, y1 = bbox
@@ -158,7 +159,7 @@ def visualize(img_pil, bboxes, categories, confidences, order,
         draw.text((cx - tw / 2, cy - th / 2 - 1), num_str,
                   fill=(0, 0, 0, 255), font=font_bold)
 
-    # 图例（放在图片右下角）
+    # 图例（右下角）
     legend_items = list(CLASS_COLORS.items())
     max_len = max(draw.textbbox((0, 0), k, font=font)[2] for k, _ in legend_items)
     lx = W - max_len - 68
@@ -181,8 +182,9 @@ def visualize(img_pil, bboxes, categories, confidences, order,
               f"{num_elems} elements  |  {num_classes} types  |  {len(order)} in reading order",
               fill=(255, 255, 255, 255), font=font)
 
-    # 转回 RGB 保存
-    img.convert("RGB").save(output_path, "JPEG", quality=90)
+    # 关键：alpha_composite 合成后再转 RGB（否则透明像素变黑）
+    result = Image.alpha_composite(img_rgba, overlay)
+    result.convert("RGB").save(output_path, "JPEG", quality=90)
     return output_path
 
 
