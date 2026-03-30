@@ -1,0 +1,41 @@
+# Model weights (too large, use releases or scripts to download)
+*.pt
+*.pth
+
+# Cache
+__pycache__/
+*.pyc
+*.cache
+*.pycache
+labels/*.cache
+labels/*.cache.gz
+
+# Logs and runs
+runs/
+logs/
+*.log
+
+# Temp files
+*.tmp
+*.swp
+*~
+.DS_Store
+
+# Inference outputs
+inference_results/
+
+# Synthetic data (generated)
+data/synthetic_yolo/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual env
+venv/
+env/
+*.venv/
+
+# Downloaded models from ultralytics
+yolo*.pt
+rtdetr*.pt
+*.weights

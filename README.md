@@ -1,142 +1,122 @@
-# doc-layout-analyzer
+# DocLayout-RTDETR-Pointer
 
-> 文档布局分析 + 阅读顺序推理 Pipeline
+**RT-DETR / YOLOv8 检测 + Pointer Network 阅读顺序** 文档布局分析 pipeline。
 
-功能：输入 PDF → 检测标题/正文/图片/表格/公式 → 输出阅读顺序 JSON
-
----
-
-## 项目结构
+## 架构
 
 ```
-doc-layout-analyzer/
-├── src/
-│   ├── pdf_parser.py       # PDF 解析（文本坐标/图片提取）
-│   ├── reading_order.py    # 阅读顺序推理（2D坐标+栏位分析）
-│   └── pipeline.py         # 完整 Pipeline（解析→检测→排序）
-├── scripts/
-│   ├── train_yolo.py       # YOLO 模型训练
-│   ├── label_converter.py  # Label-Studio ↔ YOLO 格式互转
-│   └── run_tmux.py         # tmux 任务启动器（所有>5min任务）
-├── data/                    # 标注数据
-├── models/                  # 训练好的模型
-├── configs/                 # 配置文件
-└── README.md
+PDF → 检测模型(RT-DETR/YOLO) → 边界框+类别
+                                      ↓
+                          Pointer Network → N×N相似度矩阵 → 阅读顺序
 ```
 
----
+### 子模块
 
-## 快速开始
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 2D位置编码 | `src/pointer_network/position_encoding.py` | 正弦编码 x,y 坐标 + 类别 embedding |
+| Transformer编码器 | `src/pointer_network/transformer_encoder.py` | 6层 Transformer + 几何偏置 |
+| 解码算法 | `src/pointer_network/decoding.py` | 赢累积解码，恢复拓扑一致的阅读顺序 |
+| 训练接口 | `src/pointer_network/train_pointer.py` | Pointer Network 训练 + 伪标签生成 |
+| 检测脚本 | `scripts/infer_rtdetr_pointer.py` | 完整 pipeline 推理 |
 
-### 1. 安装依赖
+## 模型下载
 
+### 检测模型（YOLO）
 ```bash
-pip install ultralytics torch pymupdf pillow numpy
+# YOLOv8n (轻量, mAP@0.5≈0.88)
+wget https://github.com/NfirstB/doc-layout-rtdetr-pointer/releases/download/v1.0/layout_yolov8n.pt
+
+# YOLOv8m (中等)
+wget https://github.com/NfirstB/doc-layout-rtdetr-pointer/releases/download/v1.0/layout_yolov8m.pt
 ```
 
-### 2. 准备标注数据
-
-使用 Label-Studio 标注，导出 JSON 后转换为 YOLO 格式：
-
+### Pointer Network（阅读顺序）
 ```bash
-python scripts/label_converter.py \
-    --input ./ls_export.json \
-    --output ./data/yolo_dataset/ \
-    --to-yolo
+# 伪标签训练的初始版本（待标注数据后重新训练）
+wget https://github.com/NfirstB/doc-layout-rtdetr-pointer/releases/download/v1.0/pointer_network_pseudo.pt
 ```
 
-### 3. 训练模型（>5分钟必须用 tmux）
+## 使用方法
 
+### 完整推理（检测 + 阅读顺序）
 ```bash
-# 在 tmux 里启动训练（立即返回，不阻塞）
-python scripts/run_tmux.py train \
-    --data ./data/yolo_dataset/ \
-    --epochs 100 \
+python scripts/infer_rtdetr_pointer.py \
+    --detector models/layout_yolov8n.pt \
+    --pointer models/pointer_network_pseudo.pt \
+    --pdf paper.pdf \
+    --page 0 \
+    --output result.jpg
+```
+
+### RT-DETR 训练
+```bash
+python scripts/train_rtdetr.py \
+    --data-dir /path/to/yolo_dataset \
+    --epochs 50 \
+    --batch 8 \
+    --model-size l
+```
+
+### YOLOv8 训练
+```bash
+python scripts/train_yolo.py \
+    --data-dir /path/to/yolo_dataset \
+    --epochs 50 \
     --batch 16 \
-    --size m \
-    --name layout_train
-
-# 查看训练进度
-tmux attach -t layout_train
-# 或看日志
-tail -f /tmp/tmux_layout_train.log
-
-# 查看所有 tmux session
-python scripts/run_tmux.py status
-
-# 关闭 session
-tmux kill-session -t layout_train
+    --model-size n
 ```
 
-### 4. 批量推理
+### PubLayNet 数据集下载
+```bash
+python scripts/download_publaynet.py \
+    --output ./publaynet_yolo \
+    --num-train 500 \
+    --num-val 50
+```
+
+## 依赖
 
 ```bash
-python scripts/run_tmux.py infer \
-    --pdf-dir ./pdfs/ \
-    --output ./output/ \
-    --model ./models/layout_yolov8m.pt
+pip install ultralytics torch pdfplumber pyyaml pillow
 ```
 
----
+## 数据集格式
 
-## 标签类别（8类）
-
-| ID | 标签 | 说明 |
-|----|------|------|
-| 0 | title | 文档/页面标题 |
-| 1 | header | 章节标题 |
-| 2 | body | 正文段落 |
-| 3 | figure | 图片 |
-| 4 | caption | 图片/表格标题 |
-| 5 | table | 表格 |
-| 6 | footnote | 脚注 |
-| 7 | equation | 公式 |
-
----
-
-## 阅读顺序推理算法
-
+YOLO 格式：
 ```
-1. 检测栏数（1栏/2栏/3栏）
-   → 分析元素左边界分布，找双峰分隔点
-
-2. 分离跨栏元素（标题/图片/表格）
-   → 宽度 > 单栏 80% 的视为跨栏
-
-3. 普通元素按行分组
-   → 用 y 坐标聚类估算行高
-   → 每个元素分配 (row, col)
-
-4. 排序：先 row（从上到下），再 col（从左到右）
-   → 跨栏元素按最近上方普通元素位置插入
-
-5. 输出：按阅读顺序排列的 JSON
+dataset/
+├── images/
+│   ├── train/
+│   └── val/
+├── labels/
+│   ├── train/
+│   └── val/
+└── data.yaml
 ```
 
----
-
-## Label-Studio 部署
-
-```bash
-# 本地启动 Label-Studio
-pip install label-studio
-label-studio start
-
-# 生成标注配置
-python scripts/label_converter.py --gen-config label_config.xml
+`data.yaml` 示例：
+```yaml
+path: ./dataset
+train: images/train
+val: images/val
+nc: 8
+names: ['title', 'header', 'body', 'figure', 'caption', 'table', 'footnote', 'equation']
 ```
 
-在 Label-Studio Web UI 中导入 `label_config.xml` 即可开始标注。
+## Pointer Network 架构
 
----
+- **输入**: 边界框 (N, 4) + 类别 (N,) → d_model=256 维向量
+- **编码器**: 6层 Transformer + Relation-DETR 几何偏置
+- **关系头**: 成对双线性相似度 → N×N 矩阵（S_ij = "i在j前读"的概率）
+- **解码**: 赢累积算法，保证拓扑一致性
 
-## 配套项目
+## 论文
 
-| 项目 | 说明 |
-|------|------|
-| [mmkg-agent](https://github.com/NfirstB/mmkg-agent) | 论文 → 知识图谱（用这个模块做布局分析输入）|
-| [mmkg-papers](https://github.com/NfirstB/mmkg-papers) | Transformer 论文调研 |
+如果这个项目对你有帮助，请引用：
+- Buffer of Thoughts: arXiv:2406.04271
+- ReasonFlux: arXiv:2502.06772
 
----
+## License
 
-*最后更新：2026-03-27*
+MIT
